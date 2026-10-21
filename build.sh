@@ -8,6 +8,8 @@ APP=build/AutoScroll.app
 rm -rf build
 mkdir -p "$APP/Contents/MacOS"
 cp Info.plist "$APP/Contents/"
+mkdir -p "$APP/Contents/Resources"
+cp assets/AppIcon.icns "$APP/Contents/Resources/"
 # Some Command Line Tools installs ship a stale usr/include/swift/module.modulemap that
 # duplicates bridging.modulemap and breaks `import AppKit`; hide it with an empty overlay.
 : > build/empty.modulemap
