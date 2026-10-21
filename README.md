@@ -21,7 +21,7 @@ Everything is set inline in the menu bar menu: no submenus.
 | Setting | Control | Notes |
 | --- | --- | --- |
 | Mode | Auto / Delay | Auto scrolls continuously. Delay scrolls a short eased burst (4 s worth of the speed, over 0.3 s), then waits. |
-| Speed | Slider, 10-400 px/s | Logarithmic, so the slow end is fine-grained. Default 90 px/s. |
+| Speed | Slider, 20-800 px/s | Logarithmic, so the slow end is fine-grained. Default 180 px/s. |
 | Delay | Slider, 1-30 s | Wait between bursts in Delay mode. Default 3 s. |
 | Direction | Down / Up | Default Down. |
 | Hotkey | Change… | Record any shortcut with ⌘, ⌃ or ⌥ (or a single F-key). Reset to default restores ⌃⌥S. |

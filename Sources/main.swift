@@ -51,7 +51,7 @@ final class AutoScroll: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindo
         set { defaults.set(newValue.rawValue, forKey: "mode") }
     }
     private var pixelsPerSecond: Double {
-        get { min(max(defaults.object(forKey: "pixelsPerSecond") as? Double ?? 90, 10), 400) }
+        get { min(max(defaults.object(forKey: "pixelsPerSecond") as? Double ?? 180, 20), 800) }
         set { defaults.set(newValue, forKey: "pixelsPerSecond") }
     }
     private var stepInterval: Double {
@@ -267,7 +267,7 @@ final class AutoScroll: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindo
         modeControl.selectedSegment = mode == .continuous ? 0 : 1
         menu.addItem(row("Mode", modeControl))
 
-        let speedSlider = NSSlider(value: log(pixelsPerSecond), minValue: log(10), maxValue: log(400),
+        let speedSlider = NSSlider(value: log(pixelsPerSecond), minValue: log(20), maxValue: log(800),
                                    target: self, action: #selector(setSpeed(_:)))
         speedSlider.isContinuous = true
         speedSlider.controlSize = .small
