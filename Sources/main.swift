@@ -11,10 +11,6 @@ struct Hotkey {
     let modifiers: UInt32
 }
 
-let speeds: [(title: String, pixelsPerSecond: Double)] = [
-    ("Very slow", 15), ("Slow", 40), ("Medium", 90), ("Fast", 180), ("Very fast", 350),
-]
-let stepIntervals: [Double] = [1, 2, 3, 5, 10, 20]
 let hotkeys: [Hotkey] = [
     Hotkey(title: "⌃⌥S", keyCode: UInt32(kVK_ANSI_S), modifiers: UInt32(controlKey | optionKey)),
     Hotkey(title: "F13", keyCode: UInt32(kVK_F13), modifiers: 0),
@@ -38,16 +34,26 @@ final class AutoScroll: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var pendingStep = 0.0
     private var fraction = 0.0
 
+    private var mouseMonitor: Any?
+    private var mouseTravel = 0.0
+    private var startedAt = Date()
+    private var autoStoppedAt = Date.distantPast
+
+    private var speedValueLabel: NSTextField?
+    private var delayValueLabel: NSTextField?
+    private var delaySlider: NSSlider?
+    private var delayRow: NSView?
+
     private var mode: Mode {
         get { Mode(rawValue: defaults.string(forKey: "mode") ?? "") ?? .continuous }
         set { defaults.set(newValue.rawValue, forKey: "mode") }
     }
-    private var speedIndex: Int {
-        get { defaults.object(forKey: "speed") as? Int ?? 2 }
-        set { defaults.set(newValue, forKey: "speed") }
+    private var pixelsPerSecond: Double {
+        get { min(max(defaults.object(forKey: "pixelsPerSecond") as? Double ?? 90, 10), 400) }
+        set { defaults.set(newValue, forKey: "pixelsPerSecond") }
     }
     private var stepInterval: Double {
-        get { defaults.object(forKey: "stepInterval") as? Double ?? 3 }
+        get { min(max(defaults.object(forKey: "stepInterval") as? Double ?? 3, 1), 30) }
         set { defaults.set(newValue, forKey: "stepInterval") }
     }
     private var hotkeyIndex: Int {
@@ -57,6 +63,10 @@ final class AutoScroll: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var scrollUp: Bool {
         get { defaults.bool(forKey: "scrollUp") }
         set { defaults.set(newValue, forKey: "scrollUp") }
+    }
+    private var stopOnMouse: Bool {
+        get { defaults.object(forKey: "stopOnMouse") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "stopOnMouse") }
     }
     private var isRunning: Bool { timer != nil }
 
@@ -74,7 +84,13 @@ final class AutoScroll: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: Scrolling
 
     @objc func toggle() {
-        if isRunning { stop() } else { start() }
+        if isRunning {
+            stop()
+        } else {
+            // A macro button also sends a click; don't let the auto-stop undo that press.
+            guard Date().timeIntervalSince(autoStoppedAt) >= 0.4 else { return }
+            start()
+        }
     }
 
     private func start() {
@@ -83,6 +99,13 @@ final class AutoScroll: NSObject, NSApplicationDelegate, NSMenuDelegate {
         nextStep = Date()
         pendingStep = 0
         fraction = 0
+        startedAt = Date()
+        mouseTravel = 0
+        if stopOnMouse {
+            mouseMonitor = NSEvent.addGlobalMonitorForEvents(
+                matching: [.mouseMoved, .leftMouseDown, .rightMouseDown, .leftMouseDragged, .rightMouseDragged, .scrollWheel]
+            ) { [weak self] event in self?.userTookMouse(event) }
+        }
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.tick() }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
@@ -90,16 +113,36 @@ final class AutoScroll: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func stop() {
+        if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
+        mouseMonitor = nil
         timer?.invalidate()
         timer = nil
         updateIcon()
+    }
+
+    private func userTookMouse(_ event: NSEvent) {
+        let now = Date()
+        // The hotkey press itself and a jittery hand must not stop a fresh scroll.
+        guard now.timeIntervalSince(startedAt) > 0.5 else { return }
+        switch event.type {
+        case .scrollWheel:
+            // Ignore the events we post ourselves.
+            if event.cgEvent?.getIntegerValueField(.eventSourceUnixProcessID) == Int64(getpid()) { return }
+        case .mouseMoved, .leftMouseDragged, .rightMouseDragged:
+            mouseTravel += abs(event.deltaX) + abs(event.deltaY)
+            guard mouseTravel > 8 else { return }
+        default:
+            break
+        }
+        autoStoppedAt = now
+        stop()
     }
 
     private func tick() {
         let now = Date()
         let dt = now.timeIntervalSince(lastTick)
         lastTick = now
-        let speed = speeds[speedIndex].pixelsPerSecond
+        let speed = pixelsPerSecond
 
         switch mode {
         case .continuous:
@@ -208,24 +251,50 @@ final class AutoScroll: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         menu.addItem(.separator())
 
-        menu.addItem(submenu("Mode", [
-            item("Fully auto (continuous)", #selector(setMode(_:)), tag: 0, checked: mode == .continuous),
-            item("Delay (step every few seconds)", #selector(setMode(_:)), tag: 1, checked: mode == .step),
-        ]))
-        menu.addItem(submenu("Speed", speeds.enumerated().map { i, speed in
-            item(speed.title, #selector(setSpeed(_:)), tag: i, checked: i == speedIndex)
-        }))
-        menu.addItem(submenu("Step delay", stepIntervals.enumerated().map { i, seconds in
-            item("Every \(Int(seconds))s", #selector(setStepInterval(_:)), tag: i, checked: seconds == stepInterval)
-        }))
-        menu.addItem(submenu("Direction", [
-            item("Down", #selector(setDirection(_:)), tag: 0, checked: !scrollUp),
-            item("Up", #selector(setDirection(_:)), tag: 1, checked: scrollUp),
-        ]))
-        menu.addItem(submenu("Hotkey", hotkeys.enumerated().map { i, hotkey in
-            item(hotkey.title, #selector(setHotkey(_:)), tag: i, checked: i == hotkeyIndex)
-        }))
+        let modeControl = NSSegmentedControl(labels: ["Auto", "Delay"], trackingMode: .selectOne,
+                                             target: self, action: #selector(setMode(_:)))
+        modeControl.controlSize = .small
+        modeControl.segmentDistribution = .fillEqually
+        modeControl.selectedSegment = mode == .continuous ? 0 : 1
+        menu.addItem(row("Mode", modeControl))
 
+        let speedSlider = NSSlider(value: log(pixelsPerSecond), minValue: log(10), maxValue: log(400),
+                                   target: self, action: #selector(setSpeed(_:)))
+        speedSlider.isContinuous = true
+        speedSlider.controlSize = .small
+        let speedValue = valueLabel("\(Int(pixelsPerSecond)) px/s")
+        speedValueLabel = speedValue
+        menu.addItem(row("Speed", speedSlider, value: speedValue))
+
+        let delaySlider = NSSlider(value: stepInterval, minValue: 1, maxValue: 30,
+                                   target: self, action: #selector(setStepInterval(_:)))
+        delaySlider.isContinuous = true
+        delaySlider.controlSize = .small
+        delaySlider.isEnabled = mode == .step
+        let delayValue = valueLabel("\(Int(stepInterval)) s")
+        delayValueLabel = delayValue
+        self.delaySlider = delaySlider
+        let delayItem = row("Delay", delaySlider, value: delayValue)
+        delayItem.view?.alphaValue = mode == .step ? 1 : 0.4
+        delayRow = delayItem.view
+        menu.addItem(delayItem)
+
+        let directionControl = NSSegmentedControl(labels: ["Down", "Up"], trackingMode: .selectOne,
+                                                  target: self, action: #selector(setDirection(_:)))
+        directionControl.controlSize = .small
+        directionControl.segmentDistribution = .fillEqually
+        directionControl.selectedSegment = scrollUp ? 1 : 0
+        menu.addItem(row("Direction", directionControl))
+
+        let hotkeyControl = NSSegmentedControl(labels: hotkeys.map(\.title), trackingMode: .selectOne,
+                                               target: self, action: #selector(setHotkey(_:)))
+        hotkeyControl.controlSize = .small
+        hotkeyControl.segmentDistribution = .fillEqually
+        hotkeyControl.selectedSegment = hotkeyIndex
+        menu.addItem(row("Hotkey", hotkeyControl))
+
+        menu.addItem(.separator())
+        menu.addItem(item("Stop when I use the mouse", #selector(toggleStopOnMouse), checked: stopOnMouse))
         menu.addItem(.separator())
         menu.addItem(item("Quit AutoScroll", #selector(NSApplication.terminate(_:)), key: "q"))
     }
@@ -238,22 +307,60 @@ final class AutoScroll: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return item
     }
 
-    private func submenu(_ title: String, _ items: [NSMenuItem]) -> NSMenuItem {
-        let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        let menu = NSMenu()
-        items.forEach(menu.addItem)
-        parent.submenu = menu
-        return parent
+    private func row(_ title: String, _ control: NSView, value: NSTextField? = nil) -> NSMenuItem {
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 32))
+
+        let label = NSTextField(labelWithString: title)
+        label.font = .menuFont(ofSize: 0)
+        label.frame = NSRect(x: 14, y: 8, width: 72, height: 16)
+        view.addSubview(label)
+
+        control.frame = NSRect(x: 90, y: 6, width: value == nil ? 182 : 130, height: 20)
+        view.addSubview(control)
+
+        if let value {
+            value.frame = NSRect(x: 224, y: 8, width: 50, height: 16)
+            view.addSubview(value)
+        }
+
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.view = view
+        return item
     }
 
-    @objc private func setMode(_ sender: NSMenuItem) { mode = sender.tag == 0 ? .continuous : .step }
-    @objc private func setSpeed(_ sender: NSMenuItem) { speedIndex = sender.tag }
-    @objc private func setStepInterval(_ sender: NSMenuItem) { stepInterval = stepIntervals[sender.tag] }
-    @objc private func setDirection(_ sender: NSMenuItem) { scrollUp = sender.tag == 1 }
-    @objc private func setHotkey(_ sender: NSMenuItem) {
-        hotkeyIndex = sender.tag
+    private func valueLabel(_ text: String) -> NSTextField {
+        let label = NSTextField(labelWithString: text)
+        label.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        label.textColor = .secondaryLabelColor
+        label.alignment = .right
+        return label
+    }
+
+    @objc private func setMode(_ sender: NSSegmentedControl) {
+        mode = sender.selectedSegment == 0 ? .continuous : .step
+        let stepEnabled = mode == .step
+        delaySlider?.isEnabled = stepEnabled
+        delayRow?.alphaValue = stepEnabled ? 1 : 0.4
+    }
+
+    @objc private func setSpeed(_ sender: NSSlider) {
+        pixelsPerSecond = exp(sender.doubleValue).rounded()
+        speedValueLabel?.stringValue = "\(Int(pixelsPerSecond)) px/s"
+    }
+
+    @objc private func setStepInterval(_ sender: NSSlider) {
+        stepInterval = sender.doubleValue.rounded()
+        delayValueLabel?.stringValue = "\(Int(stepInterval)) s"
+    }
+
+    @objc private func setDirection(_ sender: NSSegmentedControl) { scrollUp = sender.selectedSegment == 1 }
+
+    @objc private func setHotkey(_ sender: NSSegmentedControl) {
+        hotkeyIndex = sender.selectedSegment
         registerHotkey()
     }
+
+    @objc private func toggleStopOnMouse() { stopOnMouse.toggle() }
 
     @objc private func openAccessibilitySettings() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
