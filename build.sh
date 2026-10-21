@@ -1,6 +1,7 @@
 #!/bin/bash
 # Build AutoScroll.app, install it to ~/Applications and launch it.
 # `./build.sh --build-only` stops after building build/AutoScroll.app.
+# `./build.sh --dmg` also packages build/AutoScroll.dmg (drag-to-Applications) and stops.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -26,6 +27,14 @@ done
 lipo -create build/AutoScroll-arm64 build/AutoScroll-x86_64 -output "$APP/Contents/MacOS/AutoScroll"
 codesign --force --sign - "$APP"
 [ "${1:-}" = "--build-only" ] && exit 0
+if [ "${1:-}" = "--dmg" ]; then
+  mkdir build/dmg
+  cp -R "$APP" build/dmg/
+  ln -s /Applications build/dmg/Applications
+  hdiutil create -quiet -volname AutoScroll -srcfolder build/dmg -ov -format UDZO build/AutoScroll.dmg
+  echo "Packaged build/AutoScroll.dmg"
+  exit 0
+fi
 
 pkill -x AutoScroll || true
 mkdir -p ~/Applications

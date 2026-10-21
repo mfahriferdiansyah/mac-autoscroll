@@ -31,9 +31,14 @@ Changes apply immediately, even while scrolling, and are remembered between laun
 
 ## Download
 
-Grab `AutoScroll.zip` from the latest [release](../../releases/latest), unzip it and move `AutoScroll.app` to `/Applications`. It is a universal app (Apple Silicon and Intel) for macOS 13 or later.
+Grab **`AutoScroll.dmg`** from the [latest release](../../releases/latest), open it and drag AutoScroll into Applications. (`AutoScroll.zip` has the same app if you prefer.) It is a universal app (Apple Silicon and Intel) for macOS 13 or later.
 
-The app is not notarized by Apple, so the first launch is blocked. Right-click the app and choose **Open**, or go to System Settings → Privacy & Security and click **Open Anyway**. You only do this once.
+The app is not notarized by Apple, so macOS blocks the first launch:
+
+- **macOS 15 and later:** open it once, dismiss the warning, then go to System Settings → Privacy & Security and click **Open Anyway**.
+- **macOS 13-14:** right-click the app and choose **Open**.
+
+You only do this once. Then allow Accessibility when asked (see below).
 
 ## Build from source
 
@@ -86,7 +91,7 @@ Extra mouse buttons are not watched by "Stop when I use the mouse", so a macro b
 ```
 Sources/main.swift       the whole app
 Info.plist               bundle metadata (LSUIElement menu bar app)
-build.sh                 compile, sign, install
+build.sh                 compile, sign, install (--build-only, --dmg)
 assets/                  icon used by this README
 scripts/make-icon.swift  generates the icon
 ```
