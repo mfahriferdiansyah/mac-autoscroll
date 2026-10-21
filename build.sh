@@ -1,5 +1,6 @@
 #!/bin/bash
 # Build AutoScroll.app, install it to ~/Applications and launch it.
+# `./build.sh --build-only` stops after building build/AutoScroll.app.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -17,6 +18,7 @@ cat > build/overlay.yaml <<YAML
 YAML
 swiftc -O -swift-version 5 -vfsoverlay build/overlay.yaml -o "$APP/Contents/MacOS/AutoScroll" Sources/main.swift
 codesign --force --sign - "$APP"
+[ "${1:-}" = "--build-only" ] && exit 0
 
 pkill -x AutoScroll || true
 mkdir -p ~/Applications
