@@ -56,25 +56,19 @@ func drawIcon() {
     NSGraphicsContext.saveGraphicsState()
     mouseShadow.set()
     NSColor.white.setFill()
-    NSBezierPath(roundedRect: NSRect(x: 392, y: 380, width: 240, height: 380), xRadius: 120, yRadius: 120).fill()
+    NSBezierPath(roundedRect: NSRect(x: 392, y: 450, width: 240, height: 380), xRadius: 120, yRadius: 120).fill()
     NSGraphicsContext.restoreGraphicsState()
 
-    // Button divider and scroll wheel.
-    let divider = NSBezierPath()
-    divider.move(to: NSPoint(x: 512, y: 760))
-    divider.line(to: NSPoint(x: 512, y: 640))
-    divider.lineWidth = 12
-    accent.withAlphaComponent(0.7).setStroke()
-    divider.stroke()
+    // Scroll wheel.
     accent.setFill()
-    NSBezierPath(roundedRect: NSRect(x: 494, y: 640, width: 36, height: 80), xRadius: 18, yRadius: 18).fill()
+    NSBezierPath(roundedRect: NSRect(x: 494, y: 710, width: 36, height: 80), xRadius: 18, yRadius: 18).fill()
 
     // Motion chevrons, fading downwards.
     for (offset, alpha) in [(CGFloat(0), CGFloat(0.9)), (-70, 0.55), (-140, 0.25)] {
         let chevron = NSBezierPath()
-        chevron.move(to: NSPoint(x: 452, y: 330 + offset))
-        chevron.line(to: NSPoint(x: 512, y: 280 + offset))
-        chevron.line(to: NSPoint(x: 572, y: 330 + offset))
+        chevron.move(to: NSPoint(x: 452, y: 400 + offset))
+        chevron.line(to: NSPoint(x: 512, y: 350 + offset))
+        chevron.line(to: NSPoint(x: 572, y: 400 + offset))
         chevron.lineWidth = 34
         chevron.lineCapStyle = .round
         chevron.lineJoinStyle = .round
