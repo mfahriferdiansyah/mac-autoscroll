@@ -5,17 +5,15 @@ enum Mode: String {
     case continuous, step
 }
 
-struct Hotkey {
-    let title: String
-    let keyCode: UInt32
-    let modifiers: UInt32
-}
+let defaultHotkey: (keyCode: UInt32, modifiers: UInt32, title: String) = (
+    UInt32(kVK_ANSI_S), UInt32(controlKey | optionKey), "⌃⌥S"
+)
 
-let hotkeys: [Hotkey] = [
-    Hotkey(title: "⌃⌥S", keyCode: UInt32(kVK_ANSI_S), modifiers: UInt32(controlKey | optionKey)),
-    Hotkey(title: "F13", keyCode: UInt32(kVK_F13), modifiers: 0),
-    Hotkey(title: "F14", keyCode: UInt32(kVK_F14), modifiers: 0),
-    Hotkey(title: "F15", keyCode: UInt32(kVK_F15), modifiers: 0),
+let functionKeys: [Int: String] = [
+    Int(kVK_F1): "F1", Int(kVK_F2): "F2", Int(kVK_F3): "F3", Int(kVK_F4): "F4", Int(kVK_F5): "F5",
+    Int(kVK_F6): "F6", Int(kVK_F7): "F7", Int(kVK_F8): "F8", Int(kVK_F9): "F9", Int(kVK_F10): "F10",
+    Int(kVK_F11): "F11", Int(kVK_F12): "F12", Int(kVK_F13): "F13", Int(kVK_F14): "F14", Int(kVK_F15): "F15",
+    Int(kVK_F16): "F16", Int(kVK_F17): "F17", Int(kVK_F18): "F18", Int(kVK_F19): "F19", Int(kVK_F20): "F20",
 ]
 
 /// In step mode each step scrolls this many seconds' worth of the chosen speed,
@@ -23,7 +21,7 @@ let hotkeys: [Hotkey] = [
 let stepSeconds = 4.0
 let stepAnimation = 0.3
 
-final class AutoScroll: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AutoScroll: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
     private let defaults = UserDefaults.standard
     private var statusItem: NSStatusItem!
     private var timer: Timer?
@@ -38,6 +36,10 @@ final class AutoScroll: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var mouseTravel = 0.0
     private var startedAt = Date()
     private var autoStoppedAt = Date.distantPast
+
+    private var hotkeyPanel: NSPanel?
+    private var hotkeyMonitor: Any?
+    private var hotkeyPromptLabel: NSTextField?
 
     private var speedValueLabel: NSTextField?
     private var delayValueLabel: NSTextField?
@@ -56,9 +58,17 @@ final class AutoScroll: NSObject, NSApplicationDelegate, NSMenuDelegate {
         get { min(max(defaults.object(forKey: "stepInterval") as? Double ?? 3, 1), 30) }
         set { defaults.set(newValue, forKey: "stepInterval") }
     }
-    private var hotkeyIndex: Int {
-        get { defaults.object(forKey: "hotkey") as? Int ?? 0 }
-        set { defaults.set(newValue, forKey: "hotkey") }
+    private var hotkeyKeyCode: UInt32 {
+        get { UInt32(defaults.object(forKey: "hotkeyKeyCode") as? Int ?? Int(defaultHotkey.keyCode)) }
+        set { defaults.set(Int(newValue), forKey: "hotkeyKeyCode") }
+    }
+    private var hotkeyModifiers: UInt32 {
+        get { UInt32(defaults.object(forKey: "hotkeyModifiers") as? Int ?? Int(defaultHotkey.modifiers)) }
+        set { defaults.set(Int(newValue), forKey: "hotkeyModifiers") }
+    }
+    private var hotkeyTitle: String {
+        get { defaults.string(forKey: "hotkeyTitle") ?? defaultHotkey.title }
+        set { defaults.set(newValue, forKey: "hotkeyTitle") }
     }
     private var scrollUp: Bool {
         get { defaults.bool(forKey: "scrollUp") }
@@ -77,7 +87,7 @@ final class AutoScroll: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.menu = menu
         updateIcon()
         installHotkeyHandler()
-        registerHotkey()
+        _ = registerHotkey()
         checkAccessibility(prompt: true)
     }
 
@@ -183,12 +193,11 @@ final class AutoScroll: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }, 1, &spec, selfPtr, nil)
     }
 
-    private func registerHotkey() {
+    private func registerHotkey() -> Bool {
         if let hotkeyRef { UnregisterEventHotKey(hotkeyRef) }
         hotkeyRef = nil
-        let hotkey = hotkeys[hotkeyIndex]
         let id = EventHotKeyID(signature: OSType(0x4153_4352), id: 1) // "ASCR"
-        RegisterEventHotKey(hotkey.keyCode, hotkey.modifiers, id, GetApplicationEventTarget(), 0, &hotkeyRef)
+        return RegisterEventHotKey(hotkeyKeyCode, hotkeyModifiers, id, GetApplicationEventTarget(), 0, &hotkeyRef) == noErr
     }
 
     // MARK: Menu
@@ -243,7 +252,7 @@ final class AutoScroll: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        let hotkey = hotkeys[hotkeyIndex].title
+        let hotkey = hotkeyTitle
         menu.addItem(item(isRunning ? "Stop  (\(hotkey))" : "Start  (\(hotkey))", #selector(toggle)))
 
         if !checkAccessibility(prompt: false) {
@@ -286,12 +295,10 @@ final class AutoScroll: NSObject, NSApplicationDelegate, NSMenuDelegate {
         directionControl.selectedSegment = scrollUp ? 1 : 0
         menu.addItem(row("Direction", directionControl))
 
-        let hotkeyControl = NSSegmentedControl(labels: hotkeys.map(\.title), trackingMode: .selectOne,
-                                               target: self, action: #selector(setHotkey(_:)))
-        hotkeyControl.controlSize = .small
-        hotkeyControl.segmentDistribution = .fillEqually
-        hotkeyControl.selectedSegment = hotkeyIndex
-        menu.addItem(row("Hotkey", hotkeyControl))
+        let changeHotkeyButton = NSButton(title: "Change…", target: self, action: #selector(changeHotkey))
+        changeHotkeyButton.controlSize = .small
+        changeHotkeyButton.bezelStyle = .rounded
+        menu.addItem(row("Hotkey", changeHotkeyButton, value: valueLabel(hotkeyTitle)))
 
         menu.addItem(.separator())
         menu.addItem(item("Stop when I use the mouse", #selector(toggleStopOnMouse), checked: stopOnMouse))
@@ -355,9 +362,133 @@ final class AutoScroll: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func setDirection(_ sender: NSSegmentedControl) { scrollUp = sender.selectedSegment == 1 }
 
-    @objc private func setHotkey(_ sender: NSSegmentedControl) {
-        hotkeyIndex = sender.selectedSegment
-        registerHotkey()
+    @objc private func changeHotkey() {
+        statusItem.menu?.cancelTracking()
+        NSApp.activate(ignoringOtherApps: true)
+
+        // Free the current hotkey so pressing it records instead of toggling scrolling.
+        if let hotkeyRef { UnregisterEventHotKey(hotkeyRef) }
+        hotkeyRef = nil
+
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 280, height: 120),
+                            styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        panel.title = "AutoScroll hotkey"
+        panel.level = .floating
+        panel.isReleasedWhenClosed = false
+        panel.delegate = self
+        panel.center()
+
+        let prompt = NSTextField(labelWithString: "Press the new shortcut…")
+        prompt.alignment = .center
+        prompt.frame = NSRect(x: 20, y: 74, width: 240, height: 18)
+        panel.contentView?.addSubview(prompt)
+
+        let title = NSTextField(labelWithString: hotkeyTitle)
+        title.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+        title.alignment = .center
+        title.frame = NSRect(x: 20, y: 50, width: 240, height: 18)
+        panel.contentView?.addSubview(title)
+
+        let reset = NSButton(title: "Reset to default", target: self, action: #selector(resetHotkey))
+        reset.frame = NSRect(x: 20, y: 12, width: 140, height: 24)
+        panel.contentView?.addSubview(reset)
+
+        let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancelHotkey))
+        cancel.frame = NSRect(x: 180, y: 12, width: 80, height: 24)
+        panel.contentView?.addSubview(cancel)
+
+        hotkeyPanel = panel
+        hotkeyPromptLabel = prompt
+        hotkeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.recordHotkey(event)
+            return nil
+        }
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    private func recordHotkey(_ event: NSEvent) {
+        let flags = event.modifierFlags
+        if event.keyCode == UInt16(kVK_Escape) && flags.isEmpty {
+            cancelHotkey()
+            return
+        }
+        let isFunctionKey = functionKeys[Int(event.keyCode)] != nil
+        let hasModifiers = !flags.intersection([.command, .control, .option]).isEmpty
+        guard hasModifiers || isFunctionKey else { return }
+
+        let previous = (keyCode: hotkeyKeyCode, modifiers: hotkeyModifiers, title: hotkeyTitle)
+        hotkeyKeyCode = UInt32(event.keyCode)
+        hotkeyModifiers = carbonModifiers(flags)
+        hotkeyTitle = hotkeyName(for: event)
+        if registerHotkey() {
+            closeHotkeyPanel()
+        } else {
+            hotkeyKeyCode = previous.keyCode
+            hotkeyModifiers = previous.modifiers
+            hotkeyTitle = previous.title
+            _ = registerHotkey()
+            hotkeyPromptLabel?.stringValue = "That shortcut is in use, try another."
+        }
+    }
+
+    @objc private func resetHotkey() {
+        hotkeyKeyCode = defaultHotkey.keyCode
+        hotkeyModifiers = defaultHotkey.modifiers
+        hotkeyTitle = defaultHotkey.title
+        _ = registerHotkey()
+        closeHotkeyPanel()
+    }
+
+    @objc private func cancelHotkey() {
+        _ = registerHotkey()
+        closeHotkeyPanel()
+    }
+
+    private func closeHotkeyPanel() {
+        hotkeyPanel?.close()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        if let hotkeyMonitor { NSEvent.removeMonitor(hotkeyMonitor) }
+        hotkeyMonitor = nil
+        hotkeyPanel = nil
+        hotkeyPromptLabel = nil
+        // Closing with the close button still has to leave a hotkey installed.
+        if hotkeyRef == nil { _ = registerHotkey() }
+    }
+
+    private func carbonModifiers(_ flags: NSEvent.ModifierFlags) -> UInt32 {
+        var carbon: UInt32 = 0
+        if flags.contains(.command) { carbon |= UInt32(cmdKey) }
+        if flags.contains(.control) { carbon |= UInt32(controlKey) }
+        if flags.contains(.option) { carbon |= UInt32(optionKey) }
+        if flags.contains(.shift) { carbon |= UInt32(shiftKey) }
+        return carbon
+    }
+
+    private func hotkeyName(for event: NSEvent) -> String {
+        let flags = event.modifierFlags
+        var name = ""
+        if flags.contains(.control) { name += "⌃" }
+        if flags.contains(.option) { name += "⌥" }
+        if flags.contains(.shift) { name += "⇧" }
+        if flags.contains(.command) { name += "⌘" }
+        return name + keyName(for: event)
+    }
+
+    private func keyName(for event: NSEvent) -> String {
+        if let functionKey = functionKeys[Int(event.keyCode)] { return functionKey }
+        switch Int(event.keyCode) {
+        case Int(kVK_Space): return "Space"
+        case Int(kVK_Return): return "↩"
+        case Int(kVK_Tab): return "⇥"
+        case Int(kVK_Delete): return "⌫"
+        case Int(kVK_LeftArrow): return "←"
+        case Int(kVK_RightArrow): return "→"
+        case Int(kVK_UpArrow): return "↑"
+        case Int(kVK_DownArrow): return "↓"
+        default: return event.charactersIgnoringModifiers!.uppercased()
+        }
     }
 
     @objc private func toggleStopOnMouse() { stopOnMouse.toggle() }
