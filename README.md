@@ -16,17 +16,26 @@ AutoScroll is a small menu bar app that scrolls the window under your mouse poin
 
 ## Features
 
-| Setting | Options | Notes |
+Everything is set inline in the menu bar menu: no submenus.
+
+| Setting | Control | Notes |
 | --- | --- | --- |
-| Mode | Fully auto / Delay | Fully auto scrolls continuously; Delay scrolls a short burst every few seconds. |
-| Speed | Very slow (15 px/s), Slow (40), Medium (90), Fast (180), Very fast (350) | Pixels per second. Medium is the default. |
-| Step delay | 1, 2, 3, 5, 10, 20 s | Delay mode only. Each step scrolls 4 seconds' worth of the chosen speed, eased over 0.3 s. Default 3 s. |
-| Direction | Down / Up | Down is the default. |
-| Hotkey | ⌃⌥S (default), F13, F14, F15 | Press once to start, again to stop. |
+| Mode | Auto / Delay | Auto scrolls continuously. Delay scrolls a short eased burst (4 s worth of the speed, over 0.3 s), then waits. |
+| Speed | Slider, 10-400 px/s | Logarithmic, so the slow end is fine-grained. Default 90 px/s. |
+| Delay | Slider, 1-30 s | Wait between bursts in Delay mode. Default 3 s. |
+| Direction | Down / Up | Default Down. |
+| Hotkey | Change… | Record any shortcut with ⌘, ⌃ or ⌥ (or a single F-key). Reset to default restores ⌃⌥S. |
+| Stop when I use the mouse | On / Off | On by default: moving the mouse, clicking or scrolling yourself stops it. |
 
-Every setting is remembered between launches. Quit from the menu (⌘Q while the menu is open).
+Changes apply immediately, even while scrolling, and are remembered between launches. Quit from the menu (⌘Q while the menu is open).
 
-## Install
+## Download
+
+Grab `AutoScroll.zip` from the latest [release](../../releases/latest), unzip it and move `AutoScroll.app` to `/Applications`. It is a universal app (Apple Silicon and Intel) for macOS 13 or later.
+
+The app is not notarized by Apple, so the first launch is blocked. Right-click the app and choose **Open**, or go to System Settings → Privacy & Security and click **Open Anyway**. You only do this once.
+
+## Build from source
 
 You need macOS 13 or later and the Xcode Command Line Tools:
 
@@ -52,20 +61,24 @@ The app is ad-hoc signed, so every rebuild changes its signature: remove AutoScr
 
 ## Use it with a macro button
 
-The hotkey is an ordinary system hotkey, so you can trigger it from a mouse or keyboard macro. Map a button in Logitech Options+, BetterTouchTool, Karabiner-Elements or a similar tool to F13–F15 (or ⌃⌥S), then pick the same key under Hotkey in the menu. One press starts scrolling, the next stops it.
+The hotkey is an ordinary system hotkey, so you can trigger it from a mouse or keyboard macro. Map a button in Logitech Options+, BetterTouchTool, Karabiner-Elements or a similar tool to a shortcut, then record the same shortcut with Hotkey → Change… in the menu. F13-F19 are a good choice because nothing else uses them. One press starts scrolling, the next stops it.
+
+Extra mouse buttons are not watched by "Stop when I use the mouse", so a macro button never stops and restarts the scroll by accident.
 
 ## Troubleshooting
 
 - **Nothing scrolls.** Accessibility access is missing or stale after a rebuild. See First run above: remove and re-add AutoScroll in the Accessibility list.
 - **It scrolls the wrong way.** Flip Direction in the menu.
 - **The build fails with "redefinition of module 'SwiftBridging'" or "this SDK is not supported by the compiler".** Your Command Line Tools install has a stale module map that clashes with the SDK. `build.sh` already works around this; reinstalling the Command Line Tools fixes it properly.
-- **The hotkey does nothing.** Another app owns that key. Pick F13–F15 in the Hotkey menu, which are rarely taken.
+- **The hotkey does nothing.** Another app owns that key. Record a different shortcut with Hotkey → Change…; F13-F19 are rarely taken.
 
 ## How it works
 
 - A 60 Hz timer on the main run loop (in common modes, so it keeps running while menus are open) drives the scroll.
 - Each tick posts a pixel-unit `CGEvent` scroll event at the HID tap, with sub-pixel accumulation so slow speeds stay smooth.
 - The hotkey uses Carbon's `RegisterEventHotKey`, which needs no extra permission beyond Accessibility.
+- "Stop when I use the mouse" is a global `NSEvent` monitor that ignores the app's own scroll events and the first half second after starting.
+- No third-party dependencies and no network access: only AppKit and Carbon.
 - Settings live in `UserDefaults`.
 
 ## Project layout

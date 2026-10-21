@@ -408,7 +408,7 @@ final class AutoScroll: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindo
 
     private func recordHotkey(_ event: NSEvent) {
         let flags = event.modifierFlags
-        if event.keyCode == UInt16(kVK_Escape) && flags.isEmpty {
+        if event.keyCode == UInt16(kVK_Escape) && flags.intersection(.deviceIndependentFlagsMask).isEmpty {
             cancelHotkey()
             return
         }

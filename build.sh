@@ -18,7 +18,12 @@ cat > build/overlay.yaml <<YAML
   "name": "$(xcode-select -p)/usr/include/swift/module.modulemap",
   "external-contents": "$PWD/build/empty.modulemap" } ] }
 YAML
-swiftc -O -swift-version 5 -vfsoverlay build/overlay.yaml -o "$APP/Contents/MacOS/AutoScroll" Sources/main.swift
+# Universal binary (Apple Silicon + Intel) for macOS 13+, matching LSMinimumSystemVersion.
+for arch in arm64 x86_64; do
+  swiftc -O -swift-version 5 -vfsoverlay build/overlay.yaml -target "$arch-apple-macos13.0" \
+    -o "build/AutoScroll-$arch" Sources/main.swift
+done
+lipo -create build/AutoScroll-arm64 build/AutoScroll-x86_64 -output "$APP/Contents/MacOS/AutoScroll"
 codesign --force --sign - "$APP"
 [ "${1:-}" = "--build-only" ] && exit 0
 
