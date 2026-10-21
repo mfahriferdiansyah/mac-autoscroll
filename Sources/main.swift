@@ -151,10 +151,50 @@ final class AutoScroll: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: Menu
 
     private func updateIcon() {
-        let name = isRunning ? "arrow.down.circle.fill" : "arrow.down.circle"
-        let image = NSImage(systemSymbolName: name, accessibilityDescription: "AutoScroll")
-        image?.isTemplate = true
-        statusItem.button?.image = image
+        statusItem.button?.image = menuBarImage(running: isRunning)
+    }
+
+    /// Mouse with a scroll wheel and two down chevrons; template, so only the alpha matters.
+    private func menuBarImage(running: Bool) -> NSImage {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
+            // Mouse body, inset so the stroke stays inside the bounds.
+            let body = NSBezierPath(roundedRect: NSRect(x: 2.75, y: 2.75, width: 7.5, height: 12.5),
+                                    xRadius: 4.5, yRadius: 4.5)
+            body.lineWidth = 1.5
+            NSColor.black.set()
+            if running {
+                body.fill()
+            } else {
+                body.stroke()
+            }
+
+            // Scroll wheel, knocked out of the filled body while running.
+            let wheel = NSBezierPath()
+            wheel.move(to: NSPoint(x: 6.5, y: 10))
+            wheel.line(to: NSPoint(x: 6.5, y: 13))
+            wheel.lineWidth = 1.5
+            wheel.lineCapStyle = .round
+            if running { NSGraphicsContext.current?.compositingOperation = .destinationOut }
+            wheel.stroke()
+            if running { NSGraphicsContext.current?.compositingOperation = .sourceOver }
+
+            // Down chevrons.
+            let chevrons = NSBezierPath()
+            chevrons.lineWidth = 1.5
+            chevrons.lineCapStyle = .round
+            chevrons.lineJoinStyle = .round
+            for dy in [CGFloat(0), -4] {
+                chevrons.move(to: NSPoint(x: 12.5, y: 11 + dy))
+                chevrons.line(to: NSPoint(x: 14.5, y: 9 + dy))
+                chevrons.line(to: NSPoint(x: 16.5, y: 11 + dy))
+            }
+            chevrons.stroke()
+
+            return true
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = "AutoScroll"
+        return image
     }
 
     func menuWillOpen(_ menu: NSMenu) {
